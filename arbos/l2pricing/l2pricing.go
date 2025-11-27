@@ -26,7 +26,8 @@ type L2PricingState struct {
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
 	gasConstraints      *storage.SubStorageVector
-	multigasConstraints *storage.SubStorageVector
+	multiGasConstraints *storage.SubStorageVector
+	multiGasBaseFees    *constraints.MultiGasBaseFees
 
 	ArbosVersion uint64
 }
@@ -43,7 +44,8 @@ const (
 )
 
 var gasConstraintsKey []byte = []byte{0}
-var multigasConstraintsKey []byte = []byte{1}
+var multiGasConstraintsKey []byte = []byte{1}
+var multiGasBaseFeesKey []byte = []byte{2}
 
 const GethBlockGasLimit = 1 << 50
 const gasConstraintsMaxNum = 20
@@ -72,7 +74,8 @@ func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingSta
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
-		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
+		multiGasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multiGasConstraintsKey)),
+		multiGasBaseFees:    constraints.OpenMultiGasBaseFees(sto.OpenSubStorage(multiGasBaseFeesKey)),
 		ArbosVersion:        arbosVersion,
 	}
 }
@@ -281,11 +284,11 @@ func (ps *L2PricingState) MultiGasConstraintsMaxNum() int {
 }
 
 func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
-	return ps.multigasConstraints.Length()
+	return ps.multiGasConstraints.Length()
 }
 
 func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *constraints.MultiGasConstraint {
-	return constraints.OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+	return constraints.OpenMultiGasConstraint(ps.multiGasConstraints.At(i))
 }
 
 func (ps *L2PricingState) AddMultiGasConstraint(
@@ -294,7 +297,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	backlog uint64,
 	resourceWeights map[uint8]uint64,
 ) error {
-	subStorage, err := ps.multigasConstraints.Push()
+	subStorage, err := ps.multiGasConstraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
 	}
@@ -321,7 +324,7 @@ func (ps *L2PricingState) ClearMultiGasConstraints() error {
 		return err
 	}
 	for range length {
-		subStorage, err := ps.multigasConstraints.Pop()
+		subStorage, err := ps.multiGasConstraints.Pop()
 		if err != nil {
 			return err
 		}

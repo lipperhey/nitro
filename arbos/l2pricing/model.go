@@ -130,7 +130,7 @@ func (ps *L2PricingState) updateMultiGasConstraintsBacklogs(growBacklog bool, us
 		log.Warn("usedGas does not match sum of usedMultiGas", "usedGas", usedGas, "usedMultiGas", usedMultiGas.SingleGas())
 	}
 
-	constraintsLength, err := ps.multigasConstraints.Length()
+	constraintsLength, err := ps.multiGasConstraints.Length()
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (ps *L2PricingState) BacklogUpdateCost() uint64 {
 		result += storage.StorageReadCost
 
 		// updateMultiGasConstraintsBacklogs costs
-		constraintsLength, _ := ps.multigasConstraints.Length()
+		constraintsLength, _ := ps.multiGasConstraints.Length()
 		if constraintsLength > 0 {
 			result += storage.StorageReadCost // read length to traverse
 
@@ -283,17 +283,20 @@ func (ps *L2PricingState) updatePricingModelMultiConstraints(timePassed uint64) 
 	// Calculate exponents per resource kind for all constraints
 	exponentPerKind, _ := ps.CalcMultiGasConstraintsExponents()
 
-	// Choose the most congested resource
-	maxExponent := arbmath.Bips(0)
-	for _, exp := range exponentPerKind {
-		if exp > maxExponent {
-			maxExponent = exp
-		}
-	}
+	// Compute base fee per resource kind, store and choose the most congested resource
+	maxBaseFee, _ := ps.MinBaseFeeWei()
+	for kind, exp := range exponentPerKind {
+		baseFee, _ := ps.calcBaseFeeFromExponent(exp)
 
-	// Compute base fee
-	baseFee, _ := ps.calcBaseFeeFromExponent(maxExponent)
-	_ = ps.SetBaseFeeWei(baseFee)
+		// #nosec G115 safe: kind < multigas.NumResourceKind
+		_ = ps.multiGasBaseFees.Set(multigas.ResourceKind(kind), baseFee)
+
+		if baseFee.Cmp(maxBaseFee) > 0 {
+			maxBaseFee = baseFee
+		}
+
+	}
+	_ = ps.SetBaseFeeWei(maxBaseFee)
 }
 
 // CalcMultiGasConstraintsExponents calculates the exponents for each resource kind
